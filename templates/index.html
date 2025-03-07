@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Text-to-Speech Converter</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 50px;
+            background-color: #f8f9fa;
+        }
+        h2 {
+            color: #333;
+        }
+        textarea {
+            width: 80%;
+            height: 150px;
+            font-size: 16px;
+            padding: 10px;
+            border: 2px solid #ccc;
+            border-radius: 8px;
+            resize: vertical;
+        }
+        input[type="file"], button {
+            margin: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        #processOutput {
+            text-align: left;
+            width: 80%;
+            margin: auto;
+            padding: 10px;
+            border: 1px solid #ddd;
+            background-color: white;
+            font-family: monospace;
+            overflow-y: auto;
+            height: 150px;
+            white-space: pre-wrap;
+        }
+        .loading {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            margin-left: 5px;
+            border-radius: 50%;
+            background-color: #007bff;
+            animation: blink 1s infinite;
+        }
+        @keyframes blink {
+            50% { opacity: 0.3; }
+        }
+    </style>
+</head>
+<body>
+    <h2>Step 1: Upload an MP3 file</h2>
+    <input type="file" id="fileInput" accept=".mp3">
+    <button onclick="uploadFile()">Upload</button>
+    <p id="uploadStatus"></p>
+
+    <h2>Step 2: Enter text to generate speech</h2>
+    <textarea id="textInput" placeholder="Enter your text here..."></textarea>
+    <br>
+    <button onclick="startProcessing()">Generate Speech</button>
+    
+    <h2>Processing Output</h2>
+    <pre id="processOutput">Waiting for input...</pre>
+
+    <h2>Step 3: Download the generated speech</h2>
+    <div id="downloadLinks"></div>
+
+    <script>
+        let uploadedFilePath = "";
+        let uniqueId = "";
+
+        function uploadFile() {
+            const fileInput = document.getElementById("fileInput");
+            if (fileInput.files.length === 0) {
+                alert("Please select a file first.");
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append("file", fileInput.files[0]);
+
+            document.getElementById("uploadStatus").innerText = "Uploading...";
+            fetch("/upload", { method: "POST", body: formData })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === "success") {
+                        document.getElementById("uploadStatus").innerText = "✅ " + data.message;
+                        uploadedFilePath = data.file_path;
+                        uniqueId = data.unique_id;
+                    } else {
+                        alert(data.message);
+                    }
+                })
+                .catch(error => console.error("Error:", error));
+        }
+
+        function startProcessing() {
+            const text = document.getElementById("textInput").value;
+            if (!uploadedFilePath) {
+                alert("Please upload an MP3 file first.");
+                return;
+            }
+
+            document.getElementById("processOutput").innerText = "🔄 Processing text...\n";
+            fetch("/process", {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: `text=${encodeURIComponent(text)}&file_path=${encodeURIComponent(uploadedFilePath)}&unique_id=${encodeURIComponent(uniqueId)}`
+            })
+            .then(response => response.body.getReader())
+            .then(reader => {
+                function read() {
+                    return reader.read().then(({ done, value }) => {
+                        if (done) {
+                            const downloadDiv = document.getElementById("downloadLinks");
+                            const newLink = document.createElement("a");
+                            newLink.href = `/download/${uniqueId}`;
+                            newLink.innerText = `⬇ Download output_${uniqueId}.mp3`;
+                            newLink.style.display = "block";
+                            newLink.style.fontSize = "18px";
+                            newLink.style.marginTop = "10px";
+                            downloadDiv.appendChild(newLink);
+                            return;
+                        }
+                        document.getElementById("processOutput").innerText += new TextDecoder().decode(value);
+                        return read();
+                    });
+                }
+                return read();
+            })
+            .catch(error => console.error("Error:", error));
+        }
+    </script>
+</body>
+</html>
